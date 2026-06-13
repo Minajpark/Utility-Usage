@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Utility Usage Predictor</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="config.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -293,7 +294,7 @@ const DEFAULT_ON = new Set(['fridge','lighting_led','router','ac_central','gas_f
 const DEFAULTS = {
   step: 1,
   zip: '', zone: null, householdSize: 2,
-  apiKey: '', providerName: '',
+  apiKey: (typeof CONFIG !== 'undefined' ? CONFIG.OPENEI_API_KEY : ''), providerName: '',
   eRate: 0.13, eFixed: 10,
   gRate: 1.10, gFixed: 15,
   hasGas: true,
@@ -436,21 +437,8 @@ function renderStep1() {
     <div class="card">
       <div class="card-title">⚡ Electricity</div>
       <div class="form-grid" style="margin-bottom:.9rem">
-        <div class="field" style="grid-column:1/-1">
-          <label>Utility Provider</label>
-          <div class="provider-wrap">
-            <input id="f-provider" type="text" placeholder="e.g. Pacific Gas &amp; Electric" value="${st.providerName}" autocomplete="off">
-            <div id="provider-dd" class="provider-dropdown"></div>
-          </div>
-          <span class="hint">Type to search your provider — results load from <a href="https://openei.org" target="_blank">OpenEI URDB</a></span>
-        </div>
-        <div class="field">
-          <label>OpenEI API Key <em style="text-transform:none;font-weight:400">(optional)</em></label>
-          <input id="f-apikey" type="text" placeholder="Free key at openei.org" value="${st.apiKey}">
-          <span class="hint"><a href="https://openei.org/services/api/signup/" target="_blank">Get a free key →</a></span>
-        </div>
       </div>
-      <div id="rate-plan-info"></div>
+      <div id="provider-section">${renderProviderSection()}</div>
       <div class="form-grid" style="margin-top:.9rem">
         <div class="field">
           <label>Rate (¢/kWh)</label>
@@ -675,66 +663,119 @@ function initChart() {
 // URDB API
 // ─────────────────────────────────────────────
 
-let _searchTimer = null;
-let _ratePlans   = [];
+let _utilities      = []; // [{name, plans:[]}]
+let _providerStatus = 'idle'; // idle | loading | loaded | empty
+let _selUtilityIdx  = null;
+let _selPlanIdx     = null;
 
-async function fetchRates(zip, key, query) {
+async function fetchRates(zip, key) {
   const k = key || 'DEMO_KEY';
-  const url = `https://api.openei.org/utility_rates?version=8&format=json&api_key=${encodeURIComponent(k)}&address=${encodeURIComponent(zip)}&sector=Residential&limit=30&detail=minimal`;
+  const url = `https://api.openei.org/utility_rates?version=8&format=json&api_key=${encodeURIComponent(k)}&address=${encodeURIComponent(zip)}&sector=Residential&limit=50&detail=minimal`;
   try {
     const r = await fetch(url);
     const d = await r.json();
-    const items = d.items || [];
-    return query
-      ? items.filter(i => (i.utility_name+' '+i.name).toLowerCase().includes(query.toLowerCase()))
-      : items;
+    return d.items || [];
   } catch(e) { return []; }
 }
 
-function showDropdown(items) {
-  const dd = document.getElementById('provider-dd');
-  if (!dd) return;
-  _ratePlans = items;
-  if (!items.length) { dd.style.display = 'none'; return; }
-  dd.style.display = 'block';
-  dd.innerHTML = items.slice(0,18).map((p,i) => `
-    <div class="pdr-item" data-idx="${i}">
-      ${p.utility_name || 'Unknown Utility'}
-      <small>${p.name || ''}</small>
-    </div>
-  `).join('');
-  dd.querySelectorAll('.pdr-item').forEach(el => {
-    el.addEventListener('click', () => applyRatePlan(+el.dataset.idx));
+async function autoLoadRates(zip) {
+  _providerStatus = 'loading';
+  _utilities = []; _selUtilityIdx = null; _selPlanIdx = null;
+  updateProviderSection();
+
+  const items = await fetchRates(zip, st.apiKey);
+  if (!items.length) { _providerStatus = 'empty'; updateProviderSection(); return; }
+
+  const byName = {};
+  items.forEach(p => {
+    const name = p.utility_name || 'Unknown Utility';
+    if (!byName[name]) byName[name] = { name, plans: [] };
+    byName[name].plans.push(p);
+  });
+  _utilities = Object.values(byName);
+  _providerStatus = 'loaded';
+
+  if (_utilities.length === 1) {
+    _selUtilityIdx = 0;
+    if (_utilities[0].plans.length === 1) applyPlan(_utilities[0].plans[0]);
+  }
+  updateProviderSection();
+}
+
+function renderProviderSection() {
+  if (_providerStatus === 'idle')
+    return `<p class="hint" style="margin-top:.6rem">Enter your ZIP code to auto-load utility providers.</p>`;
+  if (_providerStatus === 'loading')
+    return `<div class="zone-banner zone-plan" style="margin-top:.6rem"><span class="spinner"></span>&nbsp; Looking up providers…</div>`;
+  if (_providerStatus === 'empty')
+    return `<div class="zone-banner" style="background:#fef9c3;border-color:#fef08a;color:#713f12;margin-top:.6rem">⚠️ No providers found for this ZIP. Enter rates manually below.</div>`;
+
+  const sel = s => `padding:.55rem .75rem;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;color:var(--text);background:white;width:100%`;
+  let html = '';
+
+  if (_utilities.length > 1) {
+    html += `<div class="field" style="margin-top:.6rem">
+      <label>Utility Provider</label>
+      <select id="sel-utility" style="${sel()}">
+        <option value="">— Select your utility —</option>
+        ${_utilities.map((u,i) => `<option value="${i}" ${_selUtilityIdx===i?'selected':''}>${u.name}</option>`).join('')}
+      </select>
+    </div>`;
+  } else {
+    html += `<div class="zone-banner zone-ok" style="margin-top:.6rem">🏢 Provider: <strong>${_utilities[0].name}</strong></div>`;
+  }
+
+  const selU = _selUtilityIdx !== null ? _utilities[_selUtilityIdx] : (_utilities.length === 1 ? _utilities[0] : null);
+  if (selU) {
+    if (selU.plans.length > 1) {
+      html += `<div class="field" style="margin-top:.75rem">
+        <label>Rate Plan</label>
+        <select id="sel-plan" style="${sel()}">
+          <option value="">— Select a rate plan —</option>
+          ${selU.plans.map((p,i) => `<option value="${i}" ${_selPlanIdx===i?'selected':''}>${p.name||'Default Plan'}</option>`).join('')}
+        </select>
+      </div>`;
+    } else {
+      const plan = selU.plans[0];
+      if (plan) html += `<div class="zone-banner zone-plan" style="margin-top:.6rem">✅ Plan: <strong>${plan.name||'Default'}</strong>${st.eRate ? ` — ${(st.eRate*100).toFixed(2)}¢/kWh` : ''}${st.eFixed ? ` + $${parseFloat(st.eFixed).toFixed(2)}/mo` : ''}</div>`;
+    }
+  }
+  return html;
+}
+
+function updateProviderSection() {
+  const el = document.getElementById('provider-section');
+  if (el) { el.innerHTML = renderProviderSection(); bindProviderListeners(); }
+}
+
+function bindProviderListeners() {
+  const selU = document.getElementById('sel-utility');
+  if (selU) selU.addEventListener('change', e => {
+    _selUtilityIdx = e.target.value !== '' ? +e.target.value : null;
+    _selPlanIdx = null;
+    const u = _selUtilityIdx !== null ? _utilities[_selUtilityIdx] : null;
+    if (u && u.plans.length === 1) applyPlan(u.plans[0]);
+    updateProviderSection();
+  });
+  const selP = document.getElementById('sel-plan');
+  if (selP) selP.addEventListener('change', e => {
+    if (e.target.value === '') return;
+    _selPlanIdx = +e.target.value;
+    const u = _selUtilityIdx !== null ? _utilities[_selUtilityIdx] : (_utilities.length === 1 ? _utilities[0] : null);
+    if (u) applyPlan(u.plans[_selPlanIdx]);
+    updateProviderSection();
   });
 }
 
-function applyRatePlan(idx) {
-  const p = _ratePlans[idx];
+function applyPlan(p) {
   if (!p) return;
   st.providerName = p.utility_name || p.name || '';
-
-  let rate = null, fixed = null;
-  if (p.energyratestructure?.[0]?.[0]?.rate != null) rate  = p.energyratestructure[0][0].rate;
-  if (p.fixedmonthlycharge != null)                  fixed = p.fixedmonthlycharge;
-  if (rate  != null) st.eRate  = rate;
-  if (fixed != null) st.eFixed = fixed;
-
-  const dd = document.getElementById('provider-dd');
-  if (dd) dd.style.display = 'none';
-  const pf = document.getElementById('f-provider');
-  if (pf) pf.value = st.providerName;
+  if (p.energyratestructure?.[0]?.[0]?.rate != null) st.eRate  = p.energyratestructure[0][0].rate;
+  if (p.fixedmonthlycharge != null)                  st.eFixed = p.fixedmonthlycharge;
   const ef = document.getElementById('f-erate');
   if (ef) ef.value = (st.eRate * 100).toFixed(2);
   const xff = document.getElementById('f-efixed');
-  if (xff) xff.value = st.eFixed;
-
-  const info = document.getElementById('rate-plan-info');
-  if (info) info.innerHTML = `
-    <div class="zone-banner zone-plan">
-      ✅ Plan loaded: <strong>${p.name}</strong> (${p.utility_name})
-      ${rate != null ? ` — ${(rate*100).toFixed(2)}¢/kWh` : ''}
-      ${fixed != null ? ` + $${fixed}/mo fixed` : ''}
-    </div>`;
+  if (xff) xff.value = parseFloat(st.eFixed).toFixed(2);
   save();
 }
 
@@ -748,52 +789,21 @@ function bindListeners() {
   // Step 1 fields
   bindInput('f-zip', v => {
     st.zip = v;
-    if (v.length === 5) { st.zone = zipToZone(v); render(); }
+    if (v.length === 5) {
+      st.zone = zipToZone(v);
+      render();
+      autoLoadRates(v);
+    }
   });
   bindChange('f-size',   v => st.householdSize = +v);
   bindChange('f-erate',  v => st.eRate  = parseFloat(v) / 100);
   bindChange('f-efixed', v => st.eFixed = parseFloat(v));
   bindChange('f-grate',  v => st.gRate  = parseFloat(v));
   bindChange('f-gfixed', v => st.gFixed = parseFloat(v));
-  bindChange('f-apikey', v => st.apiKey = v);
-
   const hasgasEl = $('f-hasgas');
   if (hasgasEl) hasgasEl.addEventListener('change', e => { st.hasGas = e.target.checked; render(); });
 
-  // Provider search
-  const provEl = $('f-provider');
-  if (provEl) {
-    provEl.addEventListener('input', e => {
-      st.providerName = e.target.value;
-      clearTimeout(_searchTimer);
-      const q = e.target.value;
-      const dd = $('provider-dd');
-      if (q.length < 2) { if (dd) dd.style.display='none'; return; }
-      if (dd) dd.innerHTML = '<div class="pdr-item"><span class="spinner"></span> Searching…</div>';
-      if (dd) dd.style.display = 'block';
-      _searchTimer = setTimeout(async () => {
-        if (!st.zip || st.zip.length < 5) {
-          showDropdown([]); return;
-        }
-        const res = await fetchRates(st.zip, st.apiKey, q);
-        showDropdown(res);
-      }, 650);
-    });
-    provEl.addEventListener('focus', async () => {
-      if (!provEl.value && st.zip.length === 5) {
-        const dd = $('provider-dd');
-        if (dd) { dd.innerHTML = '<div class="pdr-item"><span class="spinner"></span> Loading…</div>'; dd.style.display='block'; }
-        const res = await fetchRates(st.zip, st.apiKey, '');
-        showDropdown(res);
-      }
-    });
-  }
-
-  // Close dropdown on outside click
-  document.addEventListener('mousedown', e => {
-    const dd = $('provider-dd');
-    if (dd && !dd.contains(e.target) && e.target.id !== 'f-provider') dd.style.display = 'none';
-  });
+  bindProviderListeners();
 
   // Step navigation
   on('btn-to2', 'click', () => {
