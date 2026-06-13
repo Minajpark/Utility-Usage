@@ -31,13 +31,19 @@ Open `index.html` directly in any modern browser — no build step or server req
 - Inspect the monthly stacked bar chart
 - See a ranked breakdown of cost by appliance
 
-## No Installation
+## Setup
+
+1. Copy the config template and add your API key:
 
 ```
-open index.html
+cp config.example.js config.js
 ```
 
-No dependencies to install. Chart.js is loaded from CDN.
+2. Open `config.js` and replace `your_openei_api_key_here` with your key (free at [openei.org/services/api/signup](https://openei.org/services/api/signup/)).
+
+3. Open `index.html` in any modern browser — no build step or server required.
+
+`config.js` is gitignored and will never be committed. The app still works without a key but OpenEI may rate-limit requests.
 
 ## Data Sources
 
