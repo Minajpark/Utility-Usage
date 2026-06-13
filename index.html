@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Utility Usage Predictor</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --primary: #0ea5e9;
+  --primary-dark: #0284c7;
+  --bg: #f0f9ff;
+  --surface: #ffffff;
+  --border: #e0f2fe;
+  --text: #0f172a;
+  --muted: #64748b;
+  --success: #10b981;
+  --electric: #6366f1;
+  --gas: #f97316;
+  --radius: 10px;
+}
+body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+/* ── Header ── */
+.header { background: linear-gradient(135deg, #0369a1, #0ea5e9); color: white; padding: 1.25rem 2rem; display: flex; align-items: center; gap: 1rem; }
+.header h1 { font-size: 1.25rem; font-weight: 800; letter-spacing: -0.02em; }
+.header p { font-size: 0.82rem; opacity: 0.8; margin-top: 0.15rem; }
+
+/* ── Steps bar ── */
+.steps-bar { background: white; border-bottom: 1px solid var(--border); padding: 1rem 2rem; display: flex; align-items: center; gap: 0; }
+.step-item { display: flex; align-items: center; gap: 0.5rem; }
+.step-connector { flex: 1; height: 2px; background: var(--border); margin: 0 0.75rem; min-width: 24px; }
+.step-num { width: 26px; height: 26px; border-radius: 50%; background: var(--border); color: var(--muted); font-size: 0.72rem; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all .2s; }
+.step-num.active { background: var(--primary); color: white; box-shadow: 0 0 0 3px #bae6fd; }
+.step-num.done { background: var(--success); color: white; }
+.step-label { font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
+.step-label.active { color: var(--primary); font-weight: 600; }
+
+/* ── Layout ── */
+.main { max-width: 920px; margin: 2rem auto; padding: 0 1.25rem 3rem; }
+
+/* ── Card ── */
+.card { background: white; border: 1px solid var(--border); border-radius: var(--radius); padding: 1.5rem; margin-bottom: 1.25rem; }
+.card-title { font-size: 0.95rem; font-weight: 700; margin-bottom: 1.1rem; display: flex; align-items: center; gap: 0.45rem; }
+
+/* ── Form ── */
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1rem; }
+.field { display: flex; flex-direction: column; gap: 0.35rem; }
+.field label { font-size: 0.73rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.field input, .field select {
+  padding: 0.55rem 0.75rem; border: 1.5px solid var(--border);
+  border-radius: 8px; font-size: 0.88rem; color: var(--text); background: white;
+  transition: border-color .15s;
+}
+.field input:focus, .field select:focus { outline: none; border-color: var(--primary); }
+.hint { font-size: 0.73rem; color: var(--muted); }
+.hint a { color: var(--primary); }
+
+/* ── Buttons ── */
+.btn { padding: 0.6rem 1.35rem; border-radius: 8px; font-size: 0.88rem; font-weight: 600; border: none; cursor: pointer; transition: all .15s; }
+.btn-primary { background: var(--primary); color: white; }
+.btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); }
+.btn-secondary { background: white; color: var(--muted); border: 1.5px solid var(--border); }
+.btn-secondary:hover { border-color: var(--primary); color: var(--primary); }
+.nav-row { display: flex; justify-content: space-between; align-items: center; margin-top: 1.25rem; gap: 1rem; }
+
+/* ── Toggle ── */
+.toggle { position: relative; display: inline-block; width: 36px; height: 20px; flex-shrink: 0; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; cursor: pointer; inset: 0; background: #cbd5e1; transition: .25s; border-radius: 20px; }
+.slider:before { position: absolute; content: ''; height: 14px; width: 14px; left: 3px; bottom: 3px; background: white; transition: .25s; border-radius: 50%; }
+input:checked + .slider { background: var(--primary); }
+input:checked + .slider:before { transform: translateX(16px); }
+
+/* ── Provider search ── */
+.provider-wrap { position: relative; }
+.provider-dropdown {
+  position: absolute; top: calc(100% + 2px); left: 0; right: 0;
+  background: white; border: 1.5px solid var(--border); border-radius: 0 0 8px 8px;
+  max-height: 220px; overflow-y: auto; z-index: 200;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.1); display: none;
+}
+.pdr-item { padding: 0.6rem 0.9rem; cursor: pointer; border-bottom: 1px solid var(--border); font-size: 0.84rem; }
+.pdr-item:hover { background: var(--bg); }
+.pdr-item small { display: block; color: var(--muted); font-size: 0.73rem; margin-top: 0.1rem; }
+.pdr-item:last-child { border-bottom: none; }
+
+/* ── Badges ── */
+.badge { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; }
+.badge-electric { background: #eef2ff; color: var(--electric); }
+.badge-gas      { background: #fff7ed; color: var(--gas); }
+.info-badge { padding: 0.3rem 0.8rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
+
+/* ── Zone banner ── */
+.zone-banner { display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.65rem 0.9rem; border-radius: 8px; font-size: 0.82rem; margin-top: 0.5rem; }
+.zone-ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+.zone-plan { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
+
+/* ── Appliance tabs ── */
+.cat-tabs { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.cat-tab { padding: 0.38rem 0.85rem; border-radius: 999px; font-size: 0.78rem; font-weight: 600; border: 1.5px solid var(--border); background: white; cursor: pointer; color: var(--muted); transition: all .15s; }
+.cat-tab:hover { border-color: var(--primary); color: var(--primary); }
+.cat-tab.active { background: var(--primary); color: white; border-color: var(--primary); }
+
+/* ── Appliance rows ── */
+.appliance-header {
+  display: grid;
+  grid-template-columns: 36px 1fr 72px 72px 72px 56px;
+  gap: 0.6rem; padding: 0 0.75rem 0.4rem;
+  font-size: 0.7rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; text-align: center;
+}
+.appliance-header .ah-name { text-align: left; }
+.appliance-list { display: flex; flex-direction: column; gap: 0.55rem; }
+.app-row {
+  display: grid;
+  grid-template-columns: 36px 1fr 72px 72px 72px 56px;
+  align-items: center; gap: 0.6rem;
+  padding: 0.65rem 0.75rem; border: 1.5px solid var(--border); border-radius: 9px;
+  background: white; transition: all .15s;
+}
+.app-row.off { opacity: 0.38; }
+.app-row:not(.off):hover { border-color: #bae6fd; background: #f8fbff; }
+.app-name { font-size: 0.84rem; font-weight: 600; line-height: 1.25; }
+.app-name small { display: block; font-weight: 400; font-size: 0.72rem; color: var(--muted); margin-top: 0.1rem; }
+.num-input {
+  width: 100%; padding: 0.32rem 0.4rem; border: 1.5px solid var(--border);
+  border-radius: 6px; font-size: 0.82rem; text-align: center; color: var(--text);
+}
+.num-input:focus { outline: none; border-color: var(--primary); }
+.num-input:disabled { background: #f8fafc; color: #94a3b8; }
+.app-qty { display: flex; align-items: center; gap: 0.25rem; }
+.qty-btn { width: 22px; height: 22px; border: 1px solid var(--border); border-radius: 4px; background: white; cursor: pointer; font-size: 0.85rem; line-height: 1; display: flex; align-items: center; justify-content: center; color: var(--muted); }
+.qty-btn:hover { border-color: var(--primary); color: var(--primary); }
+.qty-val { font-size: 0.82rem; font-weight: 600; min-width: 16px; text-align: center; }
+
+/* ── Results ── */
+.summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.25rem; }
+.sum-card { background: white; border: 1.5px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1rem; text-align: center; }
+.sum-card .sc-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 700; margin-bottom: 0.5rem; }
+.sum-card .sc-value { font-size: 1.9rem; font-weight: 800; letter-spacing: -0.03em; }
+.sum-card .sc-sub { font-size: 0.76rem; color: var(--muted); margin-top: 0.3rem; }
+.chart-wrap { position: relative; height: 300px; }
+
+.bk-table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+.bk-table th { text-align: left; padding: 0.55rem 0.75rem; background: var(--bg); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 700; }
+.bk-table th:not(:first-child) { text-align: right; }
+.bk-table td { padding: 0.55rem 0.75rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.bk-table td:not(:first-child) { text-align: right; }
+.bk-table tr:last-child td { border-bottom: none; }
+.bar-wrap { display: flex; align-items: center; gap: 0.5rem; justify-content: flex-end; }
+.bar-fill { height: 6px; border-radius: 3px; background: var(--primary); min-width: 3px; }
+
+/* ── Spinner ── */
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #cbd5e1; border-top-color: var(--primary); border-radius: 50%; animation: spin .6s linear infinite; vertical-align: middle; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Responsive ── */
+@media (max-width: 640px) {
+  .summary-grid { grid-template-columns: 1fr 1fr; }
+  .summary-grid .sum-card:first-child { grid-column: 1 / -1; }
+  .app-row { grid-template-columns: 30px 1fr 62px 62px 62px 48px; gap: 0.4rem; }
+  .appliance-header { grid-template-columns: 30px 1fr 62px 62px 62px 48px; gap: 0.4rem; }
+  .steps-bar { padding: 0.75rem 1rem; }
+  .step-connector { min-width: 12px; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>⚡ Utility Usage Predictor</h1>
+    <p>Estimate your annual electricity &amp; gas costs, month by month</p>
+  </div>
+</div>
+
+<div class="steps-bar" id="steps-bar"></div>
+
+<div class="main" id="app"></div>
+
+<script>
+// ─────────────────────────────────────────────
+// DATA
+// ─────────────────────────────────────────────
+
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const DAYS   = [31,28,31,30,31,30,31,31,30,31,30,31];
+
+const CLIMATE_ZONES = {
+  1: { name:'Hot/Tropical',  desc:'Year-round heat, nearly no winter',
+       cool:[.55,.55,.70,.85,.95,1,1,1,.95,.82,.65,.55], heat:[.08,.06,.03,0,0,0,0,0,0,0,.04,.08] },
+  2: { name:'Hot/Humid',     desc:'Very hot summers, mild winters',
+       cool:[.08,.12,.28,.52,.80,1,1,1,.80,.48,.18,.08], heat:[.52,.42,.22,.05,0,0,0,0,0,.05,.28,.52] },
+  3: { name:'Mixed/Hot',     desc:'Hot summers, cool winters',
+       cool:[.04,.05,.15,.38,.68,.95,1,1,.68,.32,.10,.04], heat:[.76,.62,.36,.12,0,0,0,0,0,.14,.46,.76] },
+  4: { name:'Mixed',         desc:'Warm summers, cold winters',
+       cool:[0,0,.05,.20,.55,.90,1,.95,.55,.15,.02,0], heat:[.90,.80,.60,.30,.08,0,0,0,.05,.30,.65,.90] },
+  5: { name:'Cold',          desc:'Mild summers, harsh winters',
+       cool:[0,0,0,.05,.28,.68,1,.90,.40,.05,0,0], heat:[1,.95,.76,.45,.16,0,0,0,.10,.45,.80,1] },
+  6: { name:'Very Cold',     desc:'Short cool summers, extreme winters',
+       cool:[0,0,0,0,.10,.44,.80,.70,.20,0,0,0], heat:[1,1,.95,.65,.30,.05,0,0,.20,.60,.90,1] },
+};
+
+function zipToZone(zip) {
+  const n = parseInt(zip.slice(0,3));
+  if (isNaN(n)) return 4;
+  if (n>=967&&n<=968) return 1;
+  if (n>=330&&n<=334) return 1;
+  if (n>=335&&n<=349) return 2;
+  if (n>=350&&n<=369) return 2;
+  if (n>=370&&n<=397) return 2;
+  if (n>=700&&n<=714) return 2;
+  if (n>=716&&n<=729) return 2;
+  if (n>=730&&n<=749) return 2;
+  if (n>=750&&n<=799) return 2;
+  if (n>=270&&n<=299) return 3;
+  if (n>=300&&n<=319) return 3;
+  if (n>=400&&n<=427) return 3;
+  if (n>=850&&n<=865) return 3;
+  if (n>=870&&n<=884) return 3;
+  if (n>=889&&n<=898) return 3;
+  if (n>=900&&n<=961) return 3;
+  if (n>=200&&n<=269) return 4;
+  if (n>=430&&n<=499) return 4;
+  if (n>=600&&n<=693) return 4;
+  if (n>=800&&n<=831) return 4;
+  if (n>=840&&n<=847) return 4;
+  if (n>=970&&n<=988) return 4;
+  if (n>=10 &&n<=199) return 5;
+  if (n>=500&&n<=589) return 5;
+  if (n>=832&&n<=849) return 5;
+  if (n>=590&&n<=599) return 6;
+  if (n>=995&&n<=999) return 6;
+  return 4;
+}
+
+const PRESETS = [
+  // HVAC
+  { id:'ac_central',   name:'Central A/C',              cat:'hvac',    fuel:'electric', w:3500,  btu:0,     isCool:true,  isHeat:false, sH:8,   wH:0,   qty:1 },
+  { id:'heat_pump',    name:'Heat Pump',                cat:'hvac',    fuel:'electric', w:3000,  btu:0,     isCool:true,  isHeat:true,  sH:6,   wH:6,   qty:1 },
+  { id:'window_ac',    name:'Window A/C Unit',          cat:'hvac',    fuel:'electric', w:1200,  btu:0,     isCool:true,  isHeat:false, sH:6,   wH:0,   qty:1 },
+  { id:'furnace_fan',  name:'Electric Furnace Fan',     cat:'hvac',    fuel:'electric', w:600,   btu:0,     isCool:false, isHeat:true,  sH:0,   wH:8,   qty:1 },
+  { id:'gas_furnace',  name:'Gas Furnace',              cat:'hvac',    fuel:'gas',      w:0,     btu:80000, isCool:false, isHeat:true,  sH:0,   wH:8,   qty:1 },
+  { id:'space_heater', name:'Electric Space Heater',    cat:'hvac',    fuel:'electric', w:1500,  btu:0,     isCool:false, isHeat:true,  sH:0,   wH:4,   qty:1 },
+  // Water
+  { id:'water_elec',   name:'Electric Water Heater',    cat:'water',   fuel:'electric', w:4500,  btu:0,     isCool:false, isHeat:false, sH:3,   wH:3.5, qty:1 },
+  { id:'water_gas',    name:'Gas Water Heater',         cat:'water',   fuel:'gas',      w:0,     btu:40000, isCool:false, isHeat:false, sH:1,   wH:1.5, qty:1 },
+  { id:'tankless_gas', name:'Tankless Gas Water Heater',cat:'water',   fuel:'gas',      w:0,     btu:150000,isCool:false, isHeat:false, sH:0.3, wH:0.5, qty:1 },
+  // Kitchen
+  { id:'fridge',       name:'Refrigerator',             cat:'kitchen', fuel:'electric', w:150,   btu:0,     isCool:false, isHeat:false, sH:24,  wH:24,  qty:1 },
+  { id:'dishwasher',   name:'Dishwasher',               cat:'kitchen', fuel:'electric', w:1800,  btu:0,     isCool:false, isHeat:false, sH:1,   wH:1,   qty:1 },
+  { id:'oven_elec',    name:'Electric Oven/Range',      cat:'kitchen', fuel:'electric', w:3500,  btu:0,     isCool:false, isHeat:false, sH:0.5, wH:0.75,qty:1 },
+  { id:'oven_gas',     name:'Gas Oven/Range',           cat:'kitchen', fuel:'gas',      w:0,     btu:65000, isCool:false, isHeat:false, sH:0.5, wH:0.75,qty:1 },
+  { id:'microwave',    name:'Microwave',                cat:'kitchen', fuel:'electric', w:1200,  btu:0,     isCool:false, isHeat:false, sH:0.25,wH:0.25,qty:1 },
+  // Laundry
+  { id:'washer',       name:'Washer',                   cat:'laundry', fuel:'electric', w:500,   btu:0,     isCool:false, isHeat:false, sH:0.5, wH:0.5, qty:1 },
+  { id:'dryer_elec',   name:'Electric Dryer',           cat:'laundry', fuel:'electric', w:5000,  btu:0,     isCool:false, isHeat:false, sH:0.5, wH:0.5, qty:1 },
+  { id:'dryer_gas',    name:'Gas Dryer',                cat:'laundry', fuel:'gas',      w:300,   btu:22000, isCool:false, isHeat:false, sH:0.5, wH:0.5, qty:1 },
+  // Lighting
+  { id:'lighting_led', name:'LED Lighting (whole home)',cat:'lighting',fuel:'electric', w:200,   btu:0,     isCool:false, isHeat:false, sH:4,   wH:7,   qty:1 },
+  { id:'lighting_inc', name:'Incandescent Lighting',    cat:'lighting',fuel:'electric', w:600,   btu:0,     isCool:false, isHeat:false, sH:4,   wH:7,   qty:1 },
+  // Entertainment
+  { id:'tv',           name:'TV (55"+)',                cat:'entertain',fuel:'electric',w:120,   btu:0,     isCool:false, isHeat:false, sH:4,   wH:5,   qty:1 },
+  { id:'gaming',       name:'Gaming Console',           cat:'entertain',fuel:'electric',w:150,   btu:0,     isCool:false, isHeat:false, sH:2,   wH:2.5, qty:1 },
+  { id:'pc',           name:'Desktop PC + Monitor',     cat:'entertain',fuel:'electric',w:250,   btu:0,     isCool:false, isHeat:false, sH:4,   wH:4,   qty:1 },
+  { id:'laptop',       name:'Laptop',                   cat:'entertain',fuel:'electric',w:45,    btu:0,     isCool:false, isHeat:false, sH:5,   wH:5,   qty:1 },
+  // EV
+  { id:'ev_l1',        name:'EV Charger — Level 1',     cat:'ev',      fuel:'electric', w:1440,  btu:0,     isCool:false, isHeat:false, sH:8,   wH:10,  qty:1 },
+  { id:'ev_l2',        name:'EV Charger — Level 2',     cat:'ev',      fuel:'electric', w:7200,  btu:0,     isCool:false, isHeat:false, sH:2,   wH:3,   qty:1 },
+  // Always-on
+  { id:'router',       name:'Router / Modem',           cat:'alwayson',fuel:'electric', w:10,    btu:0,     isCool:false, isHeat:false, sH:24,  wH:24,  qty:1 },
+  { id:'smarthub',     name:'Smart Home Hub',           cat:'alwayson',fuel:'electric', w:8,     btu:0,     isCool:false, isHeat:false, sH:24,  wH:24,  qty:1 },
+];
+
+const CATS = [
+  { id:'hvac',      label:'HVAC',          icon:'🌡️' },
+  { id:'water',     label:'Water Heating', icon:'🚿' },
+  { id:'kitchen',   label:'Kitchen',       icon:'🍳' },
+  { id:'laundry',   label:'Laundry',       icon:'👕' },
+  { id:'lighting',  label:'Lighting',      icon:'💡' },
+  { id:'entertain', label:'Entertainment', icon:'📺' },
+  { id:'ev',        label:'EV Charging',   icon:'🔋' },
+  { id:'alwayson',  label:'Always-On',     icon:'🔌' },
+];
+
+const DEFAULT_ON = new Set(['fridge','lighting_led','router','ac_central','gas_furnace','water_gas']);
+
+// ─────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────
+
+const DEFAULTS = {
+  step: 1,
+  zip: '', zone: null, householdSize: 2,
+  apiKey: '', providerName: '',
+  eRate: 0.13, eFixed: 10,
+  gRate: 1.10, gFixed: 15,
+  hasGas: true,
+  activeCat: 'hvac',
+  appliances: PRESETS.map(p => ({ ...p, enabled: DEFAULT_ON.has(p.id) })),
+};
+
+function loadState() {
+  try {
+    const s = localStorage.getItem('utilityApp_v1');
+    if (s) {
+      const parsed = JSON.parse(s);
+      // Merge saved appliances into current preset list (preserves new presets)
+      const savedById = Object.fromEntries((parsed.appliances || []).map(a => [a.id, a]));
+      parsed.appliances = PRESETS.map(p => ({ ...p, ...(savedById[p.id] || {}), id: p.id }));
+      return { ...DEFAULTS, ...parsed, step: 1 };
+    }
+  } catch(e) {}
+  return { ...DEFAULTS };
+}
+
+function save() {
+  try { localStorage.setItem('utilityApp_v1', JSON.stringify(st)); } catch(e) {}
+}
+
+let st = loadState();
+
+// ─────────────────────────────────────────────
+// CALCULATION
+// ─────────────────────────────────────────────
+
+function lerp(summer, winter, mi) {
+  const t = (Math.cos(mi * 2 * Math.PI / 12) + 1) / 2; // 1=Jan, 0=Jul
+  return winter * t + summer * (1 - t);
+}
+
+function calcMonthly() {
+  const z = CLIMATE_ZONES[st.zone || 4];
+  return MONTHS.map((_, mi) => {
+    let kwh = 0, therms = 0;
+    const d = DAYS[mi];
+    st.appliances.filter(a => a.enabled).forEach(a => {
+      let h;
+      if (a.isCool && a.isHeat) {
+        h = a.sH * z.cool[mi] + a.wH * z.heat[mi];
+      } else if (a.isCool) {
+        h = a.sH * z.cool[mi];
+      } else if (a.isHeat) {
+        h = a.wH * z.heat[mi];
+      } else {
+        h = lerp(a.sH, a.wH, mi);
+      }
+      h = Math.max(0, h);
+      const q = a.qty || 1;
+      if (a.fuel === 'electric') {
+        kwh += a.w * h * d * q / 1000;
+      } else {
+        if (a.w > 0)   kwh    += a.w   * h * d * q / 1000;
+        if (a.btu > 0) therms += a.btu * h * d * q / 100000;
+      }
+    });
+    const eCost = kwh * st.eRate + +st.eFixed;
+    const gCost = st.hasGas ? therms * st.gRate + +st.gFixed : 0;
+    return { kwh, therms, eCost, gCost, total: eCost + gCost };
+  });
+}
+
+function calcBreakdown() {
+  const z = CLIMATE_ZONES[st.zone || 4];
+  return st.appliances.filter(a => a.enabled).map(a => {
+    let kwh = 0, therms = 0;
+    MONTHS.forEach((_, mi) => {
+      let h;
+      if (a.isCool && a.isHeat) { h = a.sH * z.cool[mi] + a.wH * z.heat[mi]; }
+      else if (a.isCool) { h = a.sH * z.cool[mi]; }
+      else if (a.isHeat) { h = a.wH * z.heat[mi]; }
+      else { h = lerp(a.sH, a.wH, mi); }
+      h = Math.max(0, h);
+      const q = a.qty || 1, d = DAYS[mi];
+      if (a.fuel === 'electric') kwh += a.w * h * d * q / 1000;
+      else {
+        if (a.w > 0)   kwh    += a.w   * h * d * q / 1000;
+        if (a.btu > 0) therms += a.btu * h * d * q / 100000;
+      }
+    });
+    const cost = kwh * st.eRate + (st.hasGas ? therms * st.gRate : 0);
+    return { ...a, kwh, therms, cost };
+  }).sort((a,b) => b.cost - a.cost);
+}
+
+// ─────────────────────────────────────────────
+// RENDER
+// ─────────────────────────────────────────────
+
+let chartInst = null;
+
+function render() {
+  renderSteps();
+  const app = document.getElementById('app');
+  if (st.step === 1)      { app.innerHTML = renderStep1(); }
+  else if (st.step === 2) { app.innerHTML = renderStep2(); }
+  else                    { app.innerHTML = renderStep3(); initChart(); }
+  bindListeners();
+  save();
+}
+
+function renderSteps() {
+  const labels = ['Household Setup','Appliances','Results'];
+  document.getElementById('steps-bar').innerHTML = labels.map((lbl, i) => {
+    const n = i+1, done = n < st.step, active = n === st.step;
+    return `
+      <div class="step-item">
+        <div class="step-num ${done?'done':active?'active':''}">${done?'✓':n}</div>
+        <span class="step-label ${active?'active':''}">${lbl}</span>
+      </div>
+      ${n < labels.length ? '<div class="step-connector"></div>' : ''}
+    `;
+  }).join('');
+}
+
+// ── Step 1 ──
+function renderStep1() {
+  const z = st.zone ? CLIMATE_ZONES[st.zone] : null;
+  return `
+    <div class="card">
+      <div class="card-title">🏠 Household Information</div>
+      <div class="form-grid">
+        <div class="field">
+          <label>ZIP Code</label>
+          <input id="f-zip" type="text" maxlength="5" placeholder="e.g. 90210" value="${st.zip}">
+          ${z ? `<div class="zone-banner zone-ok">📍 Zone ${st.zone}: <strong>${z.name}</strong> — ${z.desc}</div>` : '<div class="hint">Enter ZIP to auto-detect climate zone</div>'}
+        </div>
+        <div class="field">
+          <label>People in Household</label>
+          <input id="f-size" type="number" min="1" max="20" value="${st.householdSize}">
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">⚡ Electricity</div>
+      <div class="form-grid" style="margin-bottom:.9rem">
+        <div class="field" style="grid-column:1/-1">
+          <label>Utility Provider</label>
+          <div class="provider-wrap">
+            <input id="f-provider" type="text" placeholder="e.g. Pacific Gas &amp; Electric" value="${st.providerName}" autocomplete="off">
+            <div id="provider-dd" class="provider-dropdown"></div>
+          </div>
+          <span class="hint">Type to search your provider — results load from <a href="https://openei.org" target="_blank">OpenEI URDB</a></span>
+        </div>
+        <div class="field">
+          <label>OpenEI API Key <em style="text-transform:none;font-weight:400">(optional)</em></label>
+          <input id="f-apikey" type="text" placeholder="Free key at openei.org" value="${st.apiKey}">
+          <span class="hint"><a href="https://openei.org/services/api/signup/" target="_blank">Get a free key →</a></span>
+        </div>
+      </div>
+      <div id="rate-plan-info"></div>
+      <div class="form-grid" style="margin-top:.9rem">
+        <div class="field">
+          <label>Rate (¢/kWh)</label>
+          <input id="f-erate" type="number" min="0" step="0.01" value="${(st.eRate*100).toFixed(2)}">
+        </div>
+        <div class="field">
+          <label>Fixed Monthly Fee ($)</label>
+          <input id="f-efixed" type="number" min="0" step="0.01" value="${st.eFixed}">
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">
+        🔥 Gas
+        <label class="toggle" style="margin-left:auto">
+          <input id="f-hasgas" type="checkbox" ${st.hasGas?'checked':''}>
+          <span class="slider"></span>
+        </label>
+        <span style="font-size:.8rem;color:var(--muted);margin-left:.4rem">${st.hasGas?'Enabled':'Disabled'}</span>
+      </div>
+      ${st.hasGas ? `
+        <div class="form-grid">
+          <div class="field">
+            <label>Rate ($/therm)</label>
+            <input id="f-grate" type="number" min="0" step="0.01" value="${st.gRate}">
+          </div>
+          <div class="field">
+            <label>Fixed Monthly Fee ($)</label>
+            <input id="f-gfixed" type="number" min="0" step="0.01" value="${st.gFixed}">
+          </div>
+        </div>` :
+        `<p style="font-size:.84rem;color:var(--muted)">Only electricity will be calculated.</p>`
+      }
+    </div>
+
+    <div class="nav-row"><div></div>
+      <button class="btn btn-primary" id="btn-to2">Next: Add Appliances →</button>
+    </div>
+  `;
+}
+
+// ── Step 2 ──
+function renderStep2() {
+  const cat = st.activeCat;
+  const list = st.appliances.filter(a => a.cat === cat);
+  return `
+    <div class="card">
+      <div class="card-title">🔌 Your Appliances</div>
+      <p style="font-size:.83rem;color:var(--muted);margin-bottom:.9rem">
+        Toggle the appliances you own, then adjust wattage and daily hours.
+        <strong>Summer</strong> = July usage, <strong>Winter</strong> = January usage.
+      </p>
+      <div class="cat-tabs">
+        ${CATS.map(c=>`<button class="cat-tab ${c.id===cat?'active':''}" data-cat="${c.id}">${c.icon} ${c.label}</button>`).join('')}
+      </div>
+      <div class="appliance-header">
+        <div></div>
+        <div class="ah-name">Appliance</div>
+        <div>Power</div>
+        <div>Summer<br>h/day</div>
+        <div>Winter<br>h/day</div>
+        <div>Qty</div>
+      </div>
+      <div class="appliance-list">
+        ${list.map(renderAppRow).join('')}
+      </div>
+    </div>
+    <div class="nav-row">
+      <button class="btn btn-secondary" id="btn-to1">← Back</button>
+      <button class="btn btn-primary"   id="btn-to3">View Results →</button>
+    </div>
+  `;
+}
+
+function renderAppRow(a) {
+  const isGas = a.fuel === 'gas';
+  const power = isGas && a.btu > 0 ? a.btu : a.w;
+  const unit  = isGas && a.btu > 0 ? 'BTU/h' : 'W';
+  const off   = !a.enabled;
+  return `
+    <div class="app-row ${off?'off':''}" data-id="${a.id}">
+      <label class="toggle">
+        <input type="checkbox" class="app-tog" data-id="${a.id}" ${a.enabled?'checked':''}>
+        <span class="slider"></span>
+      </label>
+      <div class="app-name">
+        ${a.name}
+        <small><span class="badge badge-${a.fuel}">${a.fuel}</span></small>
+      </div>
+      <input type="number" class="num-input app-power" data-id="${a.id}" value="${power}" min="0" title="${unit}" ${off?'disabled':''}>
+      <input type="number" class="num-input app-sh"    data-id="${a.id}" value="${a.sH}"  min="0" max="24" step="0.5" ${off?'disabled':''}>
+      <input type="number" class="num-input app-wh"    data-id="${a.id}" value="${a.wH}"  min="0" max="24" step="0.5" ${off?'disabled':''}>
+      <div class="app-qty">
+        <button class="qty-btn app-qdec" data-id="${a.id}" ${off?'disabled':''}>−</button>
+        <span class="qty-val">${a.qty||1}</span>
+        <button class="qty-btn app-qinc" data-id="${a.id}" ${off?'disabled':''}>+</button>
+      </div>
+    </div>
+  `;
+}
+
+// ── Step 3 ──
+function renderStep3() {
+  const monthly = calcMonthly();
+  const bkdown  = calcBreakdown();
+  const annual  = monthly.reduce((s,m) => s + m.total, 0);
+  const aKwh    = monthly.reduce((s,m) => s + m.kwh, 0);
+  const aTherms = monthly.reduce((s,m) => s + m.therms, 0);
+  const peak    = monthly.reduce((a,b) => a.total > b.total ? a : b);
+  const low     = monthly.reduce((a,b) => a.total < b.total ? a : b);
+  const peakMo  = MONTHS[monthly.indexOf(peak)];
+  const lowMo   = MONTHS[monthly.indexOf(low)];
+
+  return `
+    <div class="summary-grid">
+      <div class="sum-card">
+        <div class="sc-label">Annual Total</div>
+        <div class="sc-value" style="color:var(--primary)">$${annual.toFixed(0)}</div>
+        <div class="sc-sub">${aKwh.toFixed(0)} kWh${st.hasGas ? ` + ${aTherms.toFixed(0)} therms` : ''}</div>
+      </div>
+      <div class="sum-card">
+        <div class="sc-label">Peak Month</div>
+        <div class="sc-value" style="color:var(--gas)">${peakMo}</div>
+        <div class="sc-sub">$${peak.total.toFixed(0)}/mo</div>
+      </div>
+      <div class="sum-card">
+        <div class="sc-label">Lowest Month</div>
+        <div class="sc-value" style="color:var(--success)">${lowMo}</div>
+        <div class="sc-sub">$${low.total.toFixed(0)}/mo</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">
+        📊 Monthly Cost Breakdown
+        <span class="info-badge badge-electric" style="margin-left:.5rem;font-size:.75rem">⚡ Electricity</span>
+        ${st.hasGas ? '<span class="info-badge badge-gas" style="font-size:.75rem">🔥 Gas</span>' : ''}
+      </div>
+      <div class="chart-wrap"><canvas id="main-chart"></canvas></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🏆 Annual Cost by Appliance</div>
+      <table class="bk-table">
+        <thead>
+          <tr>
+            <th>Appliance</th>
+            <th>kWh/yr</th>
+            ${st.hasGas ? '<th>Therms/yr</th>' : ''}
+            <th>Annual $</th>
+            <th>Share</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${bkdown.map(a => {
+            const pct = annual > 0 ? (a.cost / annual * 100) : 0;
+            return `
+              <tr>
+                <td>${a.name} <span class="badge badge-${a.fuel}" style="margin-left:.3rem">${a.fuel}</span></td>
+                <td>${a.kwh.toFixed(0)}</td>
+                ${st.hasGas ? `<td>${a.therms.toFixed(1)}</td>` : ''}
+                <td><strong>$${a.cost.toFixed(0)}</strong></td>
+                <td>
+                  <div class="bar-wrap">
+                    <div class="bar-fill" style="width:${Math.round(pct)}px;max-width:80px"></div>
+                    <span style="font-size:.72rem;color:var(--muted);min-width:34px">${pct.toFixed(1)}%</span>
+                  </div>
+                </td>
+              </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="nav-row">
+      <button class="btn btn-secondary" id="btn-to2b">← Edit Appliances</button>
+      <button class="btn btn-secondary" id="btn-reset">↺ Start Over</button>
+    </div>
+  `;
+}
+
+function initChart() {
+  const ctx = document.getElementById('main-chart');
+  if (!ctx) return;
+  if (chartInst) { chartInst.destroy(); chartInst = null; }
+  const monthly = calcMonthly();
+  const ds = [{
+    label:'Electricity ($)',
+    data: monthly.map(m => +m.eCost.toFixed(2)),
+    backgroundColor:'rgba(99,102,241,.78)',
+    borderRadius:5,
+  }];
+  if (st.hasGas) ds.push({
+    label:'Gas ($)',
+    data: monthly.map(m => +m.gCost.toFixed(2)),
+    backgroundColor:'rgba(249,115,22,.78)',
+    borderRadius:5,
+  });
+  chartInst = new Chart(ctx, {
+    type:'bar',
+    data:{ labels: MONTHS, datasets: ds },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{ position:'top' },
+        tooltip:{
+          callbacks:{
+            footer: items => 'Total: $' + items.reduce((s,i)=>s+i.parsed.y,0).toFixed(2)
+          }
+        }
+      },
+      scales:{
+        x:{ stacked:true },
+        y:{ stacked:true, ticks:{ callback: v => '$'+v } }
+      }
+    }
+  });
+}
+
+// ─────────────────────────────────────────────
+// URDB API
+// ─────────────────────────────────────────────
+
+let _searchTimer = null;
+let _ratePlans   = [];
+
+async function fetchRates(zip, key, query) {
+  const k = key || 'DEMO_KEY';
+  const url = `https://api.openei.org/utility_rates?version=8&format=json&api_key=${encodeURIComponent(k)}&address=${encodeURIComponent(zip)}&sector=Residential&limit=30&detail=minimal`;
+  try {
+    const r = await fetch(url);
+    const d = await r.json();
+    const items = d.items || [];
+    return query
+      ? items.filter(i => (i.utility_name+' '+i.name).toLowerCase().includes(query.toLowerCase()))
+      : items;
+  } catch(e) { return []; }
+}
+
+function showDropdown(items) {
+  const dd = document.getElementById('provider-dd');
+  if (!dd) return;
+  _ratePlans = items;
+  if (!items.length) { dd.style.display = 'none'; return; }
+  dd.style.display = 'block';
+  dd.innerHTML = items.slice(0,18).map((p,i) => `
+    <div class="pdr-item" data-idx="${i}">
+      ${p.utility_name || 'Unknown Utility'}
+      <small>${p.name || ''}</small>
+    </div>
+  `).join('');
+  dd.querySelectorAll('.pdr-item').forEach(el => {
+    el.addEventListener('click', () => applyRatePlan(+el.dataset.idx));
+  });
+}
+
+function applyRatePlan(idx) {
+  const p = _ratePlans[idx];
+  if (!p) return;
+  st.providerName = p.utility_name || p.name || '';
+
+  let rate = null, fixed = null;
+  if (p.energyratestructure?.[0]?.[0]?.rate != null) rate  = p.energyratestructure[0][0].rate;
+  if (p.fixedmonthlycharge != null)                  fixed = p.fixedmonthlycharge;
+  if (rate  != null) st.eRate  = rate;
+  if (fixed != null) st.eFixed = fixed;
+
+  const dd = document.getElementById('provider-dd');
+  if (dd) dd.style.display = 'none';
+  const pf = document.getElementById('f-provider');
+  if (pf) pf.value = st.providerName;
+  const ef = document.getElementById('f-erate');
+  if (ef) ef.value = (st.eRate * 100).toFixed(2);
+  const xff = document.getElementById('f-efixed');
+  if (xff) xff.value = st.eFixed;
+
+  const info = document.getElementById('rate-plan-info');
+  if (info) info.innerHTML = `
+    <div class="zone-banner zone-plan">
+      ✅ Plan loaded: <strong>${p.name}</strong> (${p.utility_name})
+      ${rate != null ? ` — ${(rate*100).toFixed(2)}¢/kWh` : ''}
+      ${fixed != null ? ` + $${fixed}/mo fixed` : ''}
+    </div>`;
+  save();
+}
+
+// ─────────────────────────────────────────────
+// EVENT BINDING
+// ─────────────────────────────────────────────
+
+function bindListeners() {
+  const $ = id => document.getElementById(id);
+
+  // Step 1 fields
+  bindInput('f-zip', v => {
+    st.zip = v;
+    if (v.length === 5) { st.zone = zipToZone(v); render(); }
+  });
+  bindChange('f-size',   v => st.householdSize = +v);
+  bindChange('f-erate',  v => st.eRate  = parseFloat(v) / 100);
+  bindChange('f-efixed', v => st.eFixed = parseFloat(v));
+  bindChange('f-grate',  v => st.gRate  = parseFloat(v));
+  bindChange('f-gfixed', v => st.gFixed = parseFloat(v));
+  bindChange('f-apikey', v => st.apiKey = v);
+
+  const hasgasEl = $('f-hasgas');
+  if (hasgasEl) hasgasEl.addEventListener('change', e => { st.hasGas = e.target.checked; render(); });
+
+  // Provider search
+  const provEl = $('f-provider');
+  if (provEl) {
+    provEl.addEventListener('input', e => {
+      st.providerName = e.target.value;
+      clearTimeout(_searchTimer);
+      const q = e.target.value;
+      const dd = $('provider-dd');
+      if (q.length < 2) { if (dd) dd.style.display='none'; return; }
+      if (dd) dd.innerHTML = '<div class="pdr-item"><span class="spinner"></span> Searching…</div>';
+      if (dd) dd.style.display = 'block';
+      _searchTimer = setTimeout(async () => {
+        if (!st.zip || st.zip.length < 5) {
+          showDropdown([]); return;
+        }
+        const res = await fetchRates(st.zip, st.apiKey, q);
+        showDropdown(res);
+      }, 650);
+    });
+    provEl.addEventListener('focus', async () => {
+      if (!provEl.value && st.zip.length === 5) {
+        const dd = $('provider-dd');
+        if (dd) { dd.innerHTML = '<div class="pdr-item"><span class="spinner"></span> Loading…</div>'; dd.style.display='block'; }
+        const res = await fetchRates(st.zip, st.apiKey, '');
+        showDropdown(res);
+      }
+    });
+  }
+
+  // Close dropdown on outside click
+  document.addEventListener('mousedown', e => {
+    const dd = $('provider-dd');
+    if (dd && !dd.contains(e.target) && e.target.id !== 'f-provider') dd.style.display = 'none';
+  });
+
+  // Step navigation
+  on('btn-to2', 'click', () => {
+    if (!st.zip || st.zip.length < 5) { alert('Please enter a valid 5-digit ZIP code.'); return; }
+    if (!st.zone) st.zone = zipToZone(st.zip);
+    st.step = 2; render();
+  });
+  on('btn-to1',  'click', () => { st.step = 1; render(); });
+  on('btn-to3',  'click', () => { st.step = 3; render(); });
+  on('btn-to2b', 'click', () => { st.step = 2; render(); });
+  on('btn-reset','click', () => {
+    if (confirm('Reset everything and start over?')) {
+      localStorage.removeItem('utilityApp_v1');
+      st = { ...DEFAULTS, appliances: PRESETS.map(p=>({...p,enabled:DEFAULT_ON.has(p.id)})) };
+      render();
+    }
+  });
+
+  // Category tabs
+  document.querySelectorAll('.cat-tab').forEach(t => {
+    t.addEventListener('click', () => { st.activeCat = t.dataset.cat; render(); });
+  });
+
+  // Appliance toggles
+  document.querySelectorAll('.app-tog').forEach(el => {
+    el.addEventListener('change', e => {
+      const a = st.appliances.find(x => x.id === e.target.dataset.id);
+      if (a) { a.enabled = e.target.checked; render(); }
+    });
+  });
+
+  // Appliance power
+  document.querySelectorAll('.app-power').forEach(el => {
+    el.addEventListener('change', e => {
+      const a = st.appliances.find(x => x.id === e.target.dataset.id);
+      if (!a) return;
+      const v = parseFloat(e.target.value) || 0;
+      if (a.fuel === 'gas' && a.btu > 0) a.btu = v; else a.w = v;
+      save();
+    });
+  });
+
+  document.querySelectorAll('.app-sh').forEach(el => {
+    el.addEventListener('change', e => {
+      const a = st.appliances.find(x => x.id === e.target.dataset.id);
+      if (a) { a.sH = parseFloat(e.target.value)||0; save(); }
+    });
+  });
+
+  document.querySelectorAll('.app-wh').forEach(el => {
+    el.addEventListener('change', e => {
+      const a = st.appliances.find(x => x.id === e.target.dataset.id);
+      if (a) { a.wH = parseFloat(e.target.value)||0; save(); }
+    });
+  });
+
+  // Quantity buttons
+  document.querySelectorAll('.app-qinc').forEach(el => {
+    el.addEventListener('click', () => {
+      const a = st.appliances.find(x => x.id === el.dataset.id);
+      if (a) { a.qty = (a.qty||1) + 1; render(); }
+    });
+  });
+  document.querySelectorAll('.app-qdec').forEach(el => {
+    el.addEventListener('click', () => {
+      const a = st.appliances.find(x => x.id === el.dataset.id);
+      if (a && (a.qty||1) > 1) { a.qty = (a.qty||1) - 1; render(); }
+    });
+  });
+}
+
+function bindInput(id, fn) {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('input', e => { fn(e.target.value); save(); });
+}
+function bindChange(id, fn) {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('change', e => { fn(e.target.value); save(); });
+}
+function on(id, ev, fn) {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener(ev, fn);
+}
+
+// ─────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────
+render();
+</script>
+</body>
+</html>
